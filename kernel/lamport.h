@@ -50,6 +50,19 @@
 # define get_real_lamport()   CURRENT_TIME
 #endif
 
+#include <linux/rwsem.h>
+
+struct lamport_clock {
+	struct rw_semaphore lamport_sem;
+	struct lamport_time lamport_stamp;
+};
+
+extern struct lamport_clock global_lamport;
+
+/* Protect against illegal values, e.g. from currupt filesystems etc.
+ */
+extern int max_lamport_future;
+
 /*
  * We always get both the local real time and the Lamport time in parallel,
  * consistently.
@@ -59,30 +72,51 @@
  *
  * When not interested in real time, you can simply leave real_now at NULL.
  */
-extern void get_lamport(struct lamport_time *real_now,
-			struct lamport_time *lamport_now);
+extern void _get_lamport(struct lamport_clock *clock,
+			 struct lamport_time *real_now,
+			 struct lamport_time *lamport_now);
 
 /* This ensures _strict_ monotonicity of the Lamport clock */
-extern void set_lamport(struct lamport_time *lamport_old);
+extern void _set_lamport(struct lamport_clock *clock,
+			 struct lamport_time *lamport_old);
 
 /* Non-strict version.
  * Use this for better performance when strictness is not needed.
  */
-extern void set_lamport_nonstrict(struct lamport_time *lamport_old);
+extern void _set_lamport_nonstrict(struct lamport_clock *clock,
+				   struct lamport_time *lamport_old);
 
 /* After strictly advancing the Lamport time, re-get the new values.
  * This is almost equivalent to a sequence of set_lamport() ; get_lamport()
  * but (1) atomic and (2) more efficient
  * because the internal lock is taken only once.
  */
-extern void set_get_lamport(struct lamport_time *lamport_old,
-			    struct lamport_time *real_now,
-			    struct lamport_time *lamport_now);
+extern void _set_get_lamport(struct lamport_clock *clock,
+			     struct lamport_time *lamport_old,
+			     struct lamport_time *real_now,
+			     struct lamport_time *lamport_now);
 
-/* Protect against illegal values, e.g. from currupt filesystems etc.
+extern bool _protect_lamport_time(struct lamport_clock *clock,
+				  struct lamport_time *check);
+
+
+/* Usually the following versions are the preferred ones for working
+ * on the single global lamport clock instance.
  */
-extern int max_lamport_future;
 
-extern bool protect_lamport_time(struct lamport_time *check);
+#define get_lamport(real_now,lamport_now)			\
+	_get_lamport(&global_lamport,real_now,lamport_now)
+
+#define set_lamport(lamport_old)			\
+	_set_lamport(&global_lamport,lamport_old)
+
+#define set_lamport_nonstrict(lamport_old)			\
+	_set_lamport_nonstrict(&global_lamport,lamport_old)
+
+#define set_get_lamport(lamport_old,real_now,lamport_now)		\
+	_set_get_lamport(&global_lamport,lamport_old,real_now,lamport_now)
+
+#define protect_lamport_time(check)				\
+	_protect_lamport_time(&global_lamport,check)
 
 #endif
